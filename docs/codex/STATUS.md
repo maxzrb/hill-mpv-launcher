@@ -9,7 +9,7 @@
 | 当前阶段 | `v1.0.0` 已发布：流程锁定、公开文件脱敏、远端 Release 校验完成 |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.0-win-x64.zip`；含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | `main` 已推送，当前发布记录提交为 `25a5a3a`；tag `v1.0.0` 已推送，工作区待最终复核 |
+| Git | `main` 与 `origin/main` 已同步，工作区清洁；tag `v1.0.0` 已推送 |
 | 项目版本 | `1.0.0`；正式 Release 已发布 |
 | Release | `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
@@ -211,3 +211,13 @@
 - 发布记录已提交为 `25a5a3a`（`Record v1.0.0 release`），并已推送到 `origin/main`。
 - `v1.0.0` tag 仍指向发布提交 `d14f5b7`；发布记录提交未改写或覆盖已发布 tag。
 - 待完成：最终读取 Git 状态、远端 tag 和 Release 元数据，确认工作区清洁后收尾。
+
+## 2026-09-06 17:51
+
+### 最终收尾审计通过
+
+- 本地最终检查通过：`main` 与 `origin/main` 同步，工作区无未提交改动，公开 Git 内容脱敏扫描通过。
+- `发布流程.md` 仍为 Windows `ReadOnly`，本次没有修改流程内容。
+- 远端最终检查通过：仓库为公开可见，tag 为 `v1.0.0`，Release 标题为 `v1.0.0`，正式发布且唯一 asset 的 SHA-256 与本地一致。
+- Release Notes 每个非空要点均为独立行，且只使用 `[修改]`、`[新增]`、`[移除]`。
+- 本次 `v1.0.0` 发布无剩余阻塞。
