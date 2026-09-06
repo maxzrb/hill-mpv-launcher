@@ -1,0 +1,28 @@
+# 将本文件复制为 launcher.ini，再按本机路径修改。
+
+[launcher]
+debug=false
+log_dir=logs
+prefer_emby_url=true
+fallback_to_original_url=true
+
+[mpv]
+# 本机实际 mpv 路径；请按本机安装位置修改，wrapper 会把 Hills 参数原样转发给它。
+path=mpv.exe
+working_directory=.
+# 使用 Windows 命令行语法解析；留空表示按 mpv 自身配置启动，不强制全屏。
+extra_args=
+
+[emby]
+# 用于把 Hills 传来的 115 CDN 直链转换为 Emby 会话地址。
+# 本机 Hills 的 Emby 服务地址；请改成自己的服务器地址。
+server=https://your-emby-server.example
+# 可留空。wrapper 会优先读取 Hills 当前服务器的本地会话；若无法读取或服务器要求独立 API key，再填写并只保存在本地。
+token=
+device_id=HillsMpvLauncher
+
+[hills]
+# 留空时自动查找 Hills Lite 的本地数据目录。
+data_directory=
+resolve_from_cache=true
+response_scan_limit=256

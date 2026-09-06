@@ -1,0 +1,9 @@
+bin/
+obj/
+logs/
+test-output/
+launcher.ini
+release/
+release-staging/
+release-verify*/
+*.log
