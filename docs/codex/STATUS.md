@@ -6,12 +6,12 @@
 |------|------|
 | 项目目录 | `<project-root>` |
 | 项目类型 | Windows Hills Lite 外部播放器 launcher/wrapper |
-| 当前阶段 | `v1.0.0` 已发布；main 新增双击配置向导，尚未创建包含该功能的新版本 Release |
+| 当前阶段 | `v1.0.1` 发布准备：包含双击配置向导，尚未创建 tag 或 Release |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
-| 发布产物 | `hill-mpv-launcher-v1.0.0-win-x64.zip`；含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | `main` 与 `origin/main` 已同步至 `827dfd2`；tag `v1.0.0` 保持不变，工作区待最终复核 |
-| 项目版本 | `1.0.0`；正式 Release 已发布 |
-| Release | `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
+| 发布产物 | 待生成 `hill-mpv-launcher-v1.0.1-win-x64.zip`；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
+| Git | 当前代码已同步至 `8d22f2f`；版本记录待提交，`v1.0.0` 保持不变 |
+| 项目版本 | `1.0.1`；发布准备中，tag 固定为 `v1.0.1` |
+| Release | 上一版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0`；本版待创建 |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
 
 ## 已完成能力
@@ -240,3 +240,12 @@
 - `Add interactive setup wizard` 提交为 `827dfd2`，已推送到 `origin/main`。
 - `v1.0.0` tag 和既有 Release 保持不变；新向导尚未作为新版本上传。
 - 构建、publish、源码脱敏扫描和正常 dry-run 已通过；剩余验证是用户在 Windows 上双击本地 publish 的 `mpv-launcher.exe`，确认控制台窗口和交互体验。
+
+## 2026-09-06 18:26
+
+### 准备 v1.0.1 发布
+
+- 按用户“Z+1”将版本确定为 `1.0.1`；已确认远端不存在 `v1.0.1`，不会改写 `v1.0.0`。
+- 已将 `1.0.0` 从当前版本移入 `version/版本迭代记录.md` 历史，并建立 `1.0.1` 当前记录。
+- 本次 Release Notes 只使用 `[修改]`、`[新增]`、`[移除]`，不增加其他标签。
+- 待完成：版本记录提交、最终 build/publish、脱敏 ZIP 校验、推送 `v1.0.1` 和创建正式 Release。
