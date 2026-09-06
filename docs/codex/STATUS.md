@@ -6,11 +6,12 @@
 |------|------|
 | 项目目录 | `<project-root>` |
 | 项目类型 | Windows Hills Lite 外部播放器 launcher/wrapper |
-| 当前阶段 | 发布准备：流程已锁定，公开文件完成脱敏，首个版本为 `1.0.0`，尚未创建远端仓库、tag 或 Release |
+| 当前阶段 | `v1.0.0` 已发布：流程锁定、公开文件脱敏、远端 Release 校验完成 |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
-| 发布产物 | `bin/Release/net8.0-windows/win-x64/publish/mpv-launcher.exe`，self-contained 单文件；Release ZIP 另含脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | 当前目录不是 Git 仓库，未执行远端同步或提交 |
-| 项目版本 | `1.0.0`；发布准备中，tag 固定为 `v1.0.0` |
+| 发布产物 | `hill-mpv-launcher-v1.0.0-win-x64.zip`；含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
+| Git | `main` 已推送，tag `v1.0.0` 已推送；发布后文档更新待提交 |
+| 项目版本 | `1.0.0`；正式 Release 已发布 |
+| Release | `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
 
 ## 已完成能力
@@ -190,3 +191,15 @@
 - 已完成公开文件脱敏审计：移除真实服务器地址、本机路径、测试媒体 ID 和用户环境痕迹；真实 `launcher.ini` 仍保持忽略。
 - 当前阻塞：尚未完成最终 build/package、Git 初始化、远端仓库创建和 GitHub Release 上传。
 - Git 状态：项目此前不是 Git 仓库；待完成脱敏复核后初始化 `main` 分支。
+
+## 2026-09-06 17:48
+
+### v1.0.0 GitHub Release 发布完成
+
+- 已按《发布流程.md》完成最终 `dotnet build` 和 self-contained `dotnet publish`，build 为 0 警告、0 错误，发布版 `--help` 退出码为 0。
+- 已完成公开文件和 ZIP 二次脱敏校验；ZIP 清单严格为 `mpv-launcher.exe`、`launcher.ini`、`使用说明.md`，没有日志、本机配置或额外文件。
+- 已创建并推送公开仓库 `maxzrb/hill-mpv-launcher`，初始提交为 `d14f5b7`；`main` 已同步到远端。
+- 已创建并推送严格的 annotated tag `v1.0.0`，没有混入项目名或其他文字。
+- 已创建正式 Release：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0`；非 draft、非 prerelease，唯一 asset 为 `hill-mpv-launcher-v1.0.0-win-x64.zip`。
+- 远端 asset 大小为 `31676728` bytes，SHA-256 为 `b1800132980610f9389d01dec3d65e120dce723ad200aed2e2e1a1cb463df85e`，与本地一致；Release Notes 每行均使用允许的三种标签。
+- 待办：将本次发布记录提交并推送，之后确认工作区清洁。
