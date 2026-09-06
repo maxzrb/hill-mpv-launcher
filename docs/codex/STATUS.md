@@ -249,3 +249,12 @@
 - 已将 `1.0.0` 从当前版本移入 `version/版本迭代记录.md` 历史，并建立 `1.0.1` 当前记录。
 - 本次 Release Notes 只使用 `[修改]`、`[新增]`、`[移除]`，不增加其他标签。
 - 待完成：版本记录提交、最终 build/publish、脱敏 ZIP 校验、推送 `v1.0.1` 和创建正式 Release。
+
+## 2026-09-06 18:31
+
+### v1.0.1 构建与 ZIP 校验通过
+
+- Release build 和 self-contained publish 均通过，0 警告、0 错误；正常远程媒体 dry-run 通过。
+- `v1.0.1` staging 和解压结果严格只有 `mpv-launcher.exe`、`launcher.ini`、`使用说明.md`。
+- ZIP 脱敏扫描和 Release Notes 标签扫描通过；本地 ZIP SHA-256 为 `bf446c233ee0d455e40595f64050848ffc52f6aba53d5f8a66964219d121fef6`。
+- 待完成：提交构建记录、创建并推送 `v1.0.1` tag、创建正式 GitHub Release 和远端 hash 校验。
