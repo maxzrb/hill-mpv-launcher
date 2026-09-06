@@ -9,7 +9,7 @@
 | 当前阶段 | `v1.0.1` 已正式发布：包含双击配置向导，Release 已完成远端校验 |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.1-win-x64.zip`；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | 发布提交已同步至 `718db81`；`v1.0.1` tag 已推送，发布记录正在收尾；`v1.0.0` 保持不变 |
+| Git | 发布记录已同步至 `4b6568c`；`v1.0.1` tag 已推送；`v1.0.0` 保持不变 |
 | 项目版本 | `1.0.1`；已正式发布，tag 为 `v1.0.1` |
 | Release | 本版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.1`；上一版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
@@ -268,3 +268,11 @@
 - 远端 asset digest 与本地一致：`sha256:bf446c233ee0d455e40595f64050848ffc52f6aba53d5f8a66964219d121fef6`。
 - Release Notes 每行均使用 `[修改]`、`[新增]` 或 `[移除]`，未增加其他标签；公开包仍只含 exe、脱敏 ini 和使用说明。
 - 发布流程文件保持只读未修改；`v1.0.0` tag 和 Release 保持不变。
+
+## 2026-09-06 18:34
+
+### 发布收尾检查完成
+
+- 发布记录提交 `4b6568c` 已推送到 `origin/main`；`v1.0.1` tag 指向打包提交，未改写任何既有版本。
+- GitHub Release、tag、标题、唯一 asset、asset digest 和 Notes 标签检查全部通过。
+- 当前版本 `1.0.1` 已完成本次发布流程，无待处理发布动作。
