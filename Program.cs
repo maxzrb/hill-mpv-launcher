@@ -26,6 +26,11 @@ internal static class Program
             : dotnetArgs.ToList();
         var flags = WrapperFlags.Extract(suppliedArgs);
 
+        if (flags.Setup || suppliedArgs.Count == 0)
+        {
+            return LauncherSetupWizard.Run(baseDirectory);
+        }
+
         var config = LauncherConfig.Load(baseDirectory);
         var logger = LauncherLogger.Create(config.ResolveLogDirectory(baseDirectory), config.Debug || flags.Debug);
 
@@ -49,7 +54,7 @@ internal static class Program
             if (flags.Help)
             {
                 logger.Info("MODE", "help requested; no child process started");
-                logger.Info("HELP", "--debug --dry-run --dump-args --help");
+                logger.Info("HELP", "--debug --dry-run --dump-args --setup --help");
                 return 0;
             }
 
@@ -181,6 +186,372 @@ internal static class Program
     }
 }
 
+internal static class LauncherSetupWizard
+{
+    private const string EmbyPlaceholder = "https://your-emby-server.example";
+
+    public static int Run(string baseDirectory)
+    {
+        if (!NativeMethods.EnsureInteractiveConsole())
+        {
+            NativeMethods.ShowError("无法打开配置控制台。请从命令行运行 mpv-launcher.exe --setup。");
+            return 90;
+        }
+
+        try
+        {
+            Console.OutputEncoding = new UTF8Encoding(false);
+            Console.InputEncoding = new UTF8Encoding(false);
+        }
+        catch
+        {
+            // 控制台编码设置失败时仍继续使用默认控制台。
+        }
+
+        try
+        {
+            return RunCore(baseDirectory);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine();
+            Console.WriteLine("保存配置失败：" + ex.Message);
+            WaitForExit();
+            return 90;
+        }
+    }
+
+    private static int RunCore(string baseDirectory)
+    {
+        var current = LauncherConfig.Load(baseDirectory);
+
+        if (!Console.IsOutputRedirected)
+        {
+            Console.Clear();
+        }
+        Console.WriteLine("Hills 外部 mpv Launcher 配置向导");
+        Console.WriteLine("================================");
+        Console.WriteLine("此向导只会写入 exe 同目录的 launcher.ini。");
+        Console.WriteLine("Hills 正常带参数启动时不会进入此向导。");
+        Console.WriteLine();
+
+        if (current.Found)
+        {
+            Console.WriteLine("检测到已有 launcher.ini，回车会保留当前值；保存时会更新标准配置项。");
+            if (!AskYesNo("继续配置", true))
+            {
+                Console.WriteLine("未修改配置。");
+                WaitForExit();
+                return 0;
+            }
+        }
+
+        var mpvPath = AskExistingFile(baseDirectory, current.MpvPath ?? "mpv.exe");
+        var workingDirectory = AskExistingDirectory(
+            baseDirectory,
+            GetWorkingDirectoryDefault(baseDirectory, current, mpvPath));
+        var embyServer = AskEmbyServer(current.EmbyServer);
+        var embyToken = AskSecret(current.ConfiguredEmbyToken);
+
+        Console.WriteLine();
+        Console.WriteLine("即将保存以下配置：");
+        Console.WriteLine("  mpv 路径：" + mpvPath);
+        Console.WriteLine("  mpv 工作目录：" + workingDirectory);
+        Console.WriteLine("  Emby 地址：" + (string.IsNullOrWhiteSpace(embyServer) ? "<留空>" : embyServer));
+        Console.WriteLine("  Emby token：" + (string.IsNullOrWhiteSpace(embyToken) ? "<留空，优先读取 Hills 会话>" : "<已配置，不显示>"));
+        Console.WriteLine();
+
+        if (!AskYesNo("写入 launcher.ini", true))
+        {
+            Console.WriteLine("未写入配置。");
+            WaitForExit();
+            return 0;
+        }
+
+        var content = BuildConfig(current, mpvPath, workingDirectory, embyServer, embyToken);
+        WriteConfigAtomically(current.ConfigPath, content);
+
+        Console.WriteLine();
+        Console.WriteLine("配置已保存：" + current.ConfigPath);
+        Console.WriteLine("现在可以在 Hills 设置中选择本目录的 mpv-launcher.exe。");
+        Console.WriteLine("以后双击本程序可再次打开此配置向导。");
+        WaitForExit();
+        return 0;
+    }
+
+    private static string AskExistingFile(string baseDirectory, string defaultValue)
+    {
+        var candidate = CleanValue(defaultValue);
+        while (true)
+        {
+            candidate = AskText("mpv.exe 路径", candidate, true);
+            var fullPath = ResolvePath(baseDirectory, candidate);
+            if (File.Exists(fullPath))
+            {
+                return candidate;
+            }
+
+            Console.WriteLine("未找到文件：" + fullPath);
+            if (AskYesNo("仍然保存这个路径", false))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static string AskExistingDirectory(string baseDirectory, string defaultValue)
+    {
+        var candidate = CleanValue(defaultValue);
+        while (true)
+        {
+            candidate = AskText("mpv 工作目录", candidate, true);
+            var fullPath = ResolvePath(baseDirectory, candidate);
+            if (Directory.Exists(fullPath))
+            {
+                return candidate;
+            }
+
+            Console.WriteLine("未找到目录：" + fullPath);
+            if (AskYesNo("仍然保存这个目录", false))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static string AskEmbyServer(string? currentValue)
+    {
+        var candidate = string.Equals(currentValue, EmbyPlaceholder, StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : CleanValue(currentValue);
+
+        while (true)
+        {
+            candidate = AskText("Emby 服务地址（可留空）", candidate, false);
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+                && (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                    || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+            {
+                return candidate;
+            }
+
+            Console.WriteLine("地址需要是 http:// 或 https:// URL。");
+            if (AskYesNo("仍然保存这个地址", false))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static string AskSecret(string currentValue)
+    {
+        var hint = string.IsNullOrWhiteSpace(currentValue)
+            ? "Emby token（可留空，自动读取 Hills 会话）"
+            : "Emby token（回车保留当前值，输入 CLEAR 清除）";
+
+        Console.Write(hint + "：");
+        var value = ReadHiddenLine();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return currentValue;
+        }
+
+        return value.Equals("CLEAR", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : CleanValue(value);
+    }
+
+    private static string AskText(string label, string? defaultValue, bool required)
+    {
+        var suffix = string.IsNullOrWhiteSpace(defaultValue) ? string.Empty : " [" + defaultValue + "]";
+        while (true)
+        {
+            Console.Write(label + suffix + "：");
+            var value = CleanValue(Console.ReadLine());
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                if (!string.IsNullOrWhiteSpace(defaultValue))
+                {
+                    return CleanValue(defaultValue);
+                }
+
+                if (!required)
+                {
+                    return string.Empty;
+                }
+
+                Console.WriteLine("此项不能为空。");
+                continue;
+            }
+
+            return value;
+        }
+    }
+
+    private static bool AskYesNo(string prompt, bool defaultYes)
+    {
+        var suffix = defaultYes ? " [Y/n]" : " [y/N]";
+        Console.Write(prompt + suffix + "：");
+        var value = CleanValue(Console.ReadLine()).ToLowerInvariant();
+        if (value.Length == 0)
+        {
+            return defaultYes;
+        }
+
+        return value is "y" or "yes" or "是";
+    }
+
+    private static string ReadHiddenLine()
+    {
+        if (Console.IsInputRedirected)
+        {
+            return Console.ReadLine() ?? string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        try
+        {
+            while (true)
+            {
+                var key = Console.ReadKey(intercept: true);
+                if (key.Key == ConsoleKey.Enter)
+                {
+                    Console.WriteLine();
+                    return builder.ToString();
+                }
+
+                if (key.Key == ConsoleKey.Backspace)
+                {
+                    if (builder.Length > 0)
+                    {
+                        builder.Length--;
+                        Console.Write("\b \b");
+                    }
+
+                    continue;
+                }
+
+                if (!char.IsControl(key.KeyChar))
+                {
+                    builder.Append(key.KeyChar);
+                    Console.Write('*');
+                }
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return Console.ReadLine() ?? string.Empty;
+        }
+    }
+
+    private static string GetWorkingDirectoryDefault(string baseDirectory, LauncherConfig current, string mpvPath)
+    {
+        if (!string.IsNullOrWhiteSpace(current.WorkingDirectory)
+            && !current.WorkingDirectory.Equals(".", StringComparison.Ordinal))
+        {
+            return current.WorkingDirectory;
+        }
+
+        var fullMpvPath = ResolvePath(baseDirectory, mpvPath);
+        var parent = Path.GetDirectoryName(fullMpvPath);
+        return string.IsNullOrWhiteSpace(parent) ? "." : parent;
+    }
+
+    private static string ResolvePath(string baseDirectory, string value)
+    {
+        try
+        {
+            var normalized = CleanValue(value);
+            return Path.GetFullPath(Path.IsPathRooted(normalized)
+                ? normalized
+                : Path.Combine(baseDirectory, normalized));
+        }
+        catch
+        {
+            return value;
+        }
+    }
+
+    private static string BuildConfig(
+        LauncherConfig current,
+        string mpvPath,
+        string workingDirectory,
+        string embyServer,
+        string embyToken)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# 由双击配置向导生成；本文件只保存在用户本机。");
+        builder.AppendLine();
+        builder.AppendLine("[launcher]");
+        builder.AppendLine("debug=" + BoolText(current.Debug));
+        builder.AppendLine("log_dir=" + CleanValue(current.LogDirectory));
+        builder.AppendLine("prefer_emby_url=" + BoolText(current.PreferEmbyUrl));
+        builder.AppendLine("fallback_to_original_url=" + BoolText(current.FallbackToOriginalUrl));
+        builder.AppendLine();
+        builder.AppendLine("[mpv]");
+        builder.AppendLine("path=" + CleanValue(mpvPath));
+        builder.AppendLine("working_directory=" + CleanValue(workingDirectory));
+        builder.AppendLine("extra_args=" + CleanValue(current.RawExtraArgs));
+        builder.AppendLine();
+        builder.AppendLine("[emby]");
+        builder.AppendLine("server=" + CleanValue(embyServer));
+        builder.AppendLine("token=" + CleanValue(embyToken));
+        builder.AppendLine("device_id=" + CleanValue(current.EmbyDeviceId));
+        builder.AppendLine();
+        builder.AppendLine("[hills]");
+        builder.AppendLine("data_directory=" + CleanValue(current.HillsDataDirectory));
+        builder.AppendLine("resolve_from_cache=" + BoolText(current.ResolveFromHillsCache));
+        builder.AppendLine("response_scan_limit=" + current.HillsResponseScanLimit);
+        return builder.ToString();
+    }
+
+    private static void WriteConfigAtomically(string configPath, string content)
+    {
+        var temporaryPath = configPath + ".tmp";
+        try
+        {
+            File.WriteAllText(temporaryPath, content, new UTF8Encoding(false));
+            File.Move(temporaryPath, configPath, true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private static string BoolText(bool value)
+    {
+        return value ? "true" : "false";
+    }
+
+    private static string CleanValue(string? value)
+    {
+        return (value ?? string.Empty)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal)
+            .Trim()
+            .Trim('"');
+    }
+
+    private static void WaitForExit()
+    {
+        if (!Console.IsInputRedirected)
+        {
+            Console.WriteLine();
+            Console.Write("按回车退出...");
+            Console.ReadLine();
+        }
+    }
+}
+
 internal sealed class LauncherConfig
 {
     private readonly Dictionary<string, string> _values;
@@ -202,7 +573,9 @@ internal sealed class LauncherConfig
         EmbyServer = Get("emby.server");
         EmbyDeviceId = Get("emby.device_id") ?? "HillsMpvLauncher";
         HillsDataDirectory = Get("hills.data_directory") ?? Get("resolver.hills_data_directory");
-        var configuredToken = Get("emby.token");
+        ConfiguredEmbyToken = Get("emby.token") ?? string.Empty;
+        RawExtraArgs = Get("mpv.extra_args") ?? string.Empty;
+        var configuredToken = ConfiguredEmbyToken;
         EmbyToken = !string.IsNullOrWhiteSpace(configuredToken)
             ? configuredToken
             : HillsCredentialReader.TryGetAccessToken(ResolveHillsDataDirectory(), EmbyServer);
@@ -224,7 +597,9 @@ internal sealed class LauncherConfig
     public string? MpvPath { get; }
     public string? WorkingDirectory { get; }
     public string? EmbyServer { get; }
+    public string ConfiguredEmbyToken { get; }
     public string? EmbyToken { get; }
+    public string RawExtraArgs { get; }
     public string EmbyDeviceId { get; }
     public string? HillsDataDirectory { get; }
     public bool ResolveFromHillsCache { get; }
@@ -488,12 +863,13 @@ internal static class HillsCredentialReader
 
 internal sealed class WrapperFlags
 {
-    private WrapperFlags(List<string> forwardedArgs, bool debug, bool dryRun, bool dumpArgs, bool help)
+    private WrapperFlags(List<string> forwardedArgs, bool debug, bool dryRun, bool dumpArgs, bool setup, bool help)
     {
         ForwardedArgs = forwardedArgs;
         Debug = debug;
         DryRun = dryRun;
         DumpArgs = dumpArgs;
+        Setup = setup;
         Help = help;
     }
 
@@ -501,6 +877,7 @@ internal sealed class WrapperFlags
     public bool Debug { get; }
     public bool DryRun { get; }
     public bool DumpArgs { get; }
+    public bool Setup { get; }
     public bool Help { get; }
 
     public static WrapperFlags Extract(IReadOnlyList<string> args)
@@ -509,6 +886,7 @@ internal sealed class WrapperFlags
         var debug = false;
         var dryRun = false;
         var dumpArgs = false;
+        var setup = false;
         var help = false;
 
         foreach (var arg in args)
@@ -524,6 +902,9 @@ internal sealed class WrapperFlags
                 case "--dump-args":
                     dumpArgs = true;
                     break;
+                case "--setup":
+                    setup = true;
+                    break;
                 case "--help":
                 case "-h":
                 case "/?":
@@ -535,7 +916,7 @@ internal sealed class WrapperFlags
             }
         }
 
-        return new WrapperFlags(forwarded, debug, dryRun, dumpArgs, help);
+        return new WrapperFlags(forwarded, debug, dryRun, dumpArgs, setup, help);
     }
 }
 
@@ -2414,6 +2795,41 @@ internal static class NativeMethods
     private const uint OpenExisting = 3;
     private const uint FileAttributeNormal = 0x00000080;
 
+    internal static bool EnsureInteractiveConsole()
+    {
+        if (GetConsoleWindow() != IntPtr.Zero)
+        {
+            return true;
+        }
+
+        if (!AllocConsole())
+        {
+            return false;
+        }
+
+        try
+        {
+            var utf8 = new UTF8Encoding(false);
+            var input = new StreamReader(Console.OpenStandardInput(), utf8);
+            var output = new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true };
+            var error = new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true };
+            Console.SetIn(input);
+            Console.SetOut(output);
+            Console.SetError(error);
+        }
+        catch
+        {
+            // .NET 默认控制台流已经可用时，无需重复设置。
+        }
+
+        return true;
+    }
+
+    internal static void ShowError(string message)
+    {
+        MessageBoxW(IntPtr.Zero, message, "Hills 外部 mpv Launcher", 0x00000010);
+    }
+
     internal static bool IsInvalidHandle(IntPtr handle)
     {
         return handle == IntPtr.Zero || handle == InvalidHandleValue;
@@ -2560,6 +2976,15 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", EntryPoint = "GetCommandLineW")]
     private static extern IntPtr GetCommandLineW();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AllocConsole();
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr windowHandle, string text, string caption, uint type);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr CommandLineToArgvW([MarshalAs(UnmanagedType.LPWStr)] string commandLine, out int argc);

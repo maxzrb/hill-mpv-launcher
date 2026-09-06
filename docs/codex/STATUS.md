@@ -6,10 +6,10 @@
 |------|------|
 | 项目目录 | `<project-root>` |
 | 项目类型 | Windows Hills Lite 外部播放器 launcher/wrapper |
-| 当前阶段 | `v1.0.0` 已发布：流程锁定、公开文件脱敏、远端 Release 校验完成 |
+| 当前阶段 | `v1.0.0` 已发布；main 新增双击配置向导，尚未创建包含该功能的新版本 Release |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.0-win-x64.zip`；含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | `main` 与 `origin/main` 已同步，工作区清洁；tag `v1.0.0` 已推送 |
+| Git | main 有待提交的配置向导改动；tag `v1.0.0` 保持不变 |
 | 项目版本 | `1.0.0`；正式 Release 已发布 |
 | Release | `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
@@ -33,6 +33,7 @@
 - reporter 的 `end-file` 只有 `reason=eof` 才透传为完成；`quit`、`stop`、`error` 等非完成退出会补发最后 `time-pos` 并抑制完成事件。
 - 网络连接/超时、403/签名、解码/编码、媒体打开失败分别归类到 `stderr_diagnostics`。
 - Hills 缓存无法可靠匹配时不猜测 ID；保留原始 CDN URL并记录 resolver 原因。
+- 无参数双击或显式 `--setup` 时打开本机配置向导，隐藏 token 输入并原子写入 exe 同目录的用户侧 `launcher.ini`；Hills 带播放参数时不进入向导。
 - 对 Emby/115 等远程媒体自动追加 `--script-opts-append=startup_format_logos-mode=none` 和 `--no-resume-playback`，分别关闭签名流后瞻探测、阻止 mpv watch-later 恢复旧 playlist 位置；本地文件不追加，已有明确对应参数时不覆盖。
 
 ## 验证记录
@@ -221,3 +222,13 @@
 - 远端最终检查通过：仓库为公开可见，tag 为 `v1.0.0`，Release 标题为 `v1.0.0`，正式发布且唯一 asset 的 SHA-256 与本地一致。
 - Release Notes 每个非空要点均为独立行，且只使用 `[修改]`、`[新增]`、`[移除]`。
 - 本次 `v1.0.0` 发布无剩余阻塞。
+
+## 2026-09-06 18:11
+
+### 新增双击配置向导（未发布）
+
+- 主程序无参数启动时进入配置向导，显式 `--setup` 也可进入；Hills 正常带参数启动路径保持不变。
+- 向导询问 mpv 路径、工作目录、Emby 地址和可选 token；token 输入隐藏，回车保留已有值，输入 `CLEAR` 清空。
+- 配置写入 exe 同目录的 `launcher.ini`，采用 UTF-8 无 BOM 和临时文件替换，未写日志或仓库文件。
+- `dotnet build` 通过，0 警告、0 错误；正常远程媒体 dry-run 仍生成 startup-logo 和 no-resume 保护参数；self-contained publish 已更新。
+- 当前仅完成代码和本地 publish，未改写 `v1.0.0` tag/Release；待用户实际双击验证后，如需公开发布必须另行确认 `X.Y.Z` 版本号。

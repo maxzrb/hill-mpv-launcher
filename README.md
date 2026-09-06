@@ -23,10 +23,11 @@
 
 ## 使用
 
-1. 解压发布 ZIP，在 `launcher.ini` 中把 `[mpv] path` 和 `working_directory` 改成自己的 mpv 路径，把 `[emby] server` 改成自己的 Emby 地址；默认不强制全屏。
-2. 在 Hills 中将外部播放器路径设置为发布出来的 `mpv-launcher.exe`，不要设置为真正的 `mpv.exe`。
-3. 默认会自动读取 Hills 当前服务器会话；若服务器不允许自动读取，可在本地 `[emby] token` 手动填写，绝不要提交到仓库。
-4. 播放后如需诊断，查看发布目录 `logs\launcher-YYYYMMDD.log`；重点关注 `selected_source`、`HILLS-REPORTER`、`MPV-STDOUT`、`MPV-STDERR` 和 `stderr_diagnostics`。
+1. 解压发布 ZIP 后，直接双击 `mpv-launcher.exe`，会打开配置向导，引导填写 mpv 路径、工作目录和 Emby 地址；token 输入会隐藏，配置只写入本机的 `launcher.ini`。
+2. 也可以在命令行执行 `mpv-launcher.exe --setup` 重新打开向导；Hills 正常带播放参数启动时不会进入向导。
+3. 在 Hills 中将外部播放器路径设置为发布出来的 `mpv-launcher.exe`，不要设置为真正的 `mpv.exe`。
+4. 默认会自动读取 Hills 当前服务器会话；若服务器不允许自动读取，可在本地 `[emby] token` 手动填写，绝不要提交到仓库。
+5. 播放后如需诊断，查看发布目录 `logs\launcher-YYYYMMDD.log`；重点关注 `selected_source`、`HILLS-REPORTER`、`MPV-STDOUT`、`MPV-STDERR` 和 `stderr_diagnostics`。
 
 诊断模式：
 
@@ -34,9 +35,10 @@
 mpv-launcher.exe --dump-args <Hills传入的参数>
 mpv-launcher.exe --dry-run <Hills传入的参数>
 mpv-launcher.exe --debug <Hills传入的参数>
+mpv-launcher.exe --setup
 ```
 
-这些开关都会写入日志；`--dump-args` 不启动 mpv，`--dry-run` 只记录最终准备启动的命令。敏感字段不会因为 debug 开关而写入明文。
+`--dump-args`、`--dry-run` 和 `--debug` 用于诊断；`--dump-args` 不启动 mpv，`--dry-run` 只记录最终准备启动的命令。`--setup` 进入配置向导，token 不会写入日志。敏感字段不会因为 debug 开关而写入明文。
 
 ## 构建
 
