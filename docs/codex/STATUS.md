@@ -9,7 +9,7 @@
 | 当前阶段 | `v1.0.0` 已发布；main 新增双击配置向导，尚未创建包含该功能的新版本 Release |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.0-win-x64.zip`；含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | main 有待提交的配置向导改动；tag `v1.0.0` 保持不变 |
+| Git | `main` 与 `origin/main` 已同步至 `827dfd2`；tag `v1.0.0` 保持不变，工作区待最终复核 |
 | 项目版本 | `1.0.0`；正式 Release 已发布 |
 | Release | `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
@@ -232,3 +232,11 @@
 - 配置写入 exe 同目录的 `launcher.ini`，采用 UTF-8 无 BOM 和临时文件替换，未写日志或仓库文件。
 - `dotnet build` 通过，0 警告、0 错误；正常远程媒体 dry-run 仍生成 startup-logo 和 no-resume 保护参数；self-contained publish 已更新。
 - 当前仅完成代码和本地 publish，未改写 `v1.0.0` tag/Release；待用户实际双击验证后，如需公开发布必须另行确认 `X.Y.Z` 版本号。
+
+## 2026-09-06 18:13
+
+### 配置向导代码已推送
+
+- `Add interactive setup wizard` 提交为 `827dfd2`，已推送到 `origin/main`。
+- `v1.0.0` tag 和既有 Release 保持不变；新向导尚未作为新版本上传。
+- 构建、publish、源码脱敏扫描和正常 dry-run 已通过；剩余验证是用户在 Windows 上双击本地 publish 的 `mpv-launcher.exe`，确认控制台窗口和交互体验。
