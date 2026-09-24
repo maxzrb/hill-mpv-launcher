@@ -9,7 +9,7 @@
 | 当前阶段 | `v1.0.2` 已正式发布，远端 tag/Release/asset 校验完成（内容：适配 Hills Lite 1.5.3 的 `--playlist=memory://` 内联 playlist；Emby 会话地址补充 `UserId`，修复起播 403） |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.2-win-x64.zip`（`31682562` 字节）；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | 发布提交 `a124cc6`（含远端 README 提交 `56fd2f6` 的合并）已推送到 `origin/main`；`v1.0.2` tag 已推送；`v1.0.1`/`v1.0.0` 保持不变 |
+| Git | 记录提交 `84452e6` 已推送到 `origin/main`（历史含远端 README 提交 `56fd2f6` 的合并 `a124cc6`）；工作区除百度云同步临时文件外无未提交改动；`v1.0.2` tag 已推送；`v1.0.1`/`v1.0.0` 保持不变 |
 | 项目版本 | `1.0.2`；已正式发布，tag 为 `v1.0.2` |
 | Release | 本版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.2`；上一版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.1` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道；playlist 场景只替换条目里的媒体 URL，保留 `#EXTM3U`/`#EXTINF` 等结构与其余参数 |
@@ -370,3 +370,4 @@
 - Git 状态：`main` 已同步到 `a124cc6`；本地与远端 tag `v1.0.2` 均指向 `acf6dc3`（annotated tag 对象 `8aeecef`）；`v1.0.1`、`v1.0.0` 未被改写。
 - 远端 Release（§7）：标题 `v1.0.2`，`isDraft=false`、`isPrerelease=false`，URL `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.2`；唯一 asset `hill-mpv-launcher-v1.0.2-win-x64.zip`，远端大小 `31682562` 字节，远端 digest `sha256:32f741c6ad37e185496dc410d35ac151d29e83b353aa8b65f0f63e38d982a6e9`，与本地完全一致；Release Notes 共 5 条，每行均以 `[修改]`/`[新增]` 开头。
 - 遗留建议：把 `D:\pyprogram\test2`（尤其 `.git`）从百度云同步排除，避免再次出现 `.git` 写入失败或 tag/索引损坏。
+- 最终状态：记录提交 `84452e6 Record v1.0.2 release` 已推送；`origin/main = 84452e6`，本地与远端一致；工作区仅剩百度云同步产生的 `*.baiduyun.uploading.cfg` 临时文件（未提交、不进入任何发布产物）；本次发布流程结束，无待处理发布动作。
