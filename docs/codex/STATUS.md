@@ -6,12 +6,12 @@
 |------|------|
 | 项目目录 | `<project-root>` |
 | 项目类型 | Windows Hills Lite 外部播放器 launcher/wrapper |
-| 当前阶段 | `v1.0.2` 已组包并通过 ZIP 校验，等待推送 tag 与创建正式 Release（内容：适配 Hills Lite 1.5.3 的 `--playlist=memory://` 内联 playlist；Emby 会话地址补充 `UserId`，修复起播 403） |
+| 当前阶段 | `v1.0.2` 已正式发布，远端 tag/Release/asset 校验完成（内容：适配 Hills Lite 1.5.3 的 `--playlist=memory://` 内联 playlist；Emby 会话地址补充 `UserId`，修复起播 403） |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
-| 发布产物 | `hill-mpv-launcher-v1.0.1-win-x64.zip`；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | 已推送 `4b6568c`/`5391cfd`；`v1.0.1` tag 已推送；本次修复尚未提交，`v1.0.0` 保持不变 |
-| 项目版本 | `1.0.1`；已正式发布，tag 为 `v1.0.1` |
-| Release | 本版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.1`；上一版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
+| 发布产物 | `hill-mpv-launcher-v1.0.2-win-x64.zip`（`31682562` 字节）；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
+| Git | 发布提交 `a124cc6`（含远端 README 提交 `56fd2f6` 的合并）已推送到 `origin/main`；`v1.0.2` tag 已推送；`v1.0.1`/`v1.0.0` 保持不变 |
+| 项目版本 | `1.0.2`；已正式发布，tag 为 `v1.0.2` |
+| Release | 本版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.2`；上一版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.1` |
 | 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道；playlist 场景只替换条目里的媒体 URL，保留 `#EXTM3U`/`#EXTINF` 等结构与其余参数 |
 
 ## 已完成能力
@@ -353,3 +353,20 @@
 - Release Notes：`release\release-notes-v1.0.2.txt`，共 5 行，每行均以 `[修改]` 或 `[新增]` 开头，未新增其他标签。
 - 发布记录文件不进入源码仓库：`release\`、`release-staging\`、`release-verify*` 均由 `.gitignore` 覆盖。
 - 下一步：提交本记录、创建并推送 `v1.0.2` annotated tag、创建正式 GitHub Release，然后校验远端 tag/标题/Notes/asset 名称与大小与 digest。
+
+## 2026-09-24 20:32
+
+### v1.0.2 正式发布完成（含远端分叉处理记录）
+
+- 版本确认：用户明确确认本次发布版本号为 `1.0.2`；tag 严格为 `v1.0.2`；未修改《发布流程.md》。
+- 远端分叉与处理（按 §9 先停止、报告后再继续，未使用强制推送、未删除或覆盖 tag）：
+  - 推送时发现远端 `main` 存在用户自己推送的提交 `56fd2f6 enhance README content`（重写 README 并改名 Hill MPV Launcher），导致 `git push origin main` 被拒（非快进）；用户确认该提交属于本人。
+  - 此时 `v1.0.2` tag 已推送成功，指向 `acf6dc3`；GitHub Release 尚未创建；按流程保留该 tag 原样未做任何改写。
+  - 采用合并方式对齐：`git merge origin/main`，仅 `README.md` 冲突，保留用户新版 README 并补回本次新增说明（`--playlist=memory://` 兼容条目、`Emby UserId` 信息项、会话地址带 `UserId` 的 403 说明）；合并提交 `a124cc6`，`git push origin main` 成功（`56fd2f6..a124cc6`）。
+  - 期间出现的本地提交失败（`unable to append to '.git/logs/HEAD': Permission denied`）由百度云同步写入 `.git` 导致，重试后成功；已在状态中标注该环境风险。
+- 构建与校验（§5）：`dotnet build .\HillsMpvLauncher.csproj --configuration Release --nologo`、`dotnet publish .\HillsMpvLauncher.csproj --configuration Release --runtime win-x64 --self-contained true --nologo --output .\bin\Release\net8.0-windows\win-x64\publish` 均 0 警告、0 错误；exe 为 Windows x64（`machine=0x8664`）self-contained 单文件，`--help` 退出码 0。
+- 回归结论（保持有效）：远程媒体参数解析、同一 playlist 内 S1E7→S1E8→S1E9 顺序、旧格式三个媒体块、reporter 脚本转发、`command_line_round_trip=true`、日志脱敏（含真实 AccessToken/UserId 不落日志）全部通过；另有一次真实 mpv 无窗口播放验证（`time-pos` 递增、1920x1080 解码、`end-file=eof`）。
+- 组包（§6）：staging `release-staging\v1.0.2` 仅含 `mpv-launcher.exe`（69572322 字节）、脱敏 `launcher.ini`、`使用说明.md`；ZIP `release\hill-mpv-launcher-v1.0.2-win-x64.zip`，大小 `31682562` 字节，本地 SHA-256 `32f741c6ad37e185496dc410d35ac151d29e83b353aa8b65f0f63e38d982a6e9`；解压校验与 staging 哈希一致。
+- Git 状态：`main` 已同步到 `a124cc6`；本地与远端 tag `v1.0.2` 均指向 `acf6dc3`（annotated tag 对象 `8aeecef`）；`v1.0.1`、`v1.0.0` 未被改写。
+- 远端 Release（§7）：标题 `v1.0.2`，`isDraft=false`、`isPrerelease=false`，URL `https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.2`；唯一 asset `hill-mpv-launcher-v1.0.2-win-x64.zip`，远端大小 `31682562` 字节，远端 digest `sha256:32f741c6ad37e185496dc410d35ac151d29e83b353aa8b65f0f63e38d982a6e9`，与本地完全一致；Release Notes 共 5 条，每行均以 `[修改]`/`[新增]` 开头。
+- 遗留建议：把 `D:\pyprogram\test2`（尤其 `.git`）从百度云同步排除，避免再次出现 `.git` 写入失败或 tag/索引损坏。
