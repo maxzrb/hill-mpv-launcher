@@ -6,7 +6,7 @@
 |------|------|
 | 项目目录 | `<project-root>` |
 | 项目类型 | Windows Hills Lite 外部播放器 launcher/wrapper |
-| 当前阶段 | `v1.0.1` 已正式发布；当前工作区含两项未发布的兼容性修复：支持 Hills Lite 1.5.3 的 `--playlist=memory://` 内联 playlist 调用格式；Emby 会话地址补充 `UserId` 以通过服务器新增的播放用户校验 |
+| 当前阶段 | `v1.0.2` 已组包并通过 ZIP 校验，等待推送 tag 与创建正式 Release（内容：适配 Hills Lite 1.5.3 的 `--playlist=memory://` 内联 playlist；Emby 会话地址补充 `UserId`，修复起播 403） |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.1-win-x64.zip`；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
 | Git | 已推送 `4b6568c`/`5391cfd`；`v1.0.1` tag 已推送；本次修复尚未提交，`v1.0.0` 保持不变 |
@@ -340,3 +340,16 @@
 - 脱敏检查：伪敏感标记在日志中 0 命中；发布目录 4 个日志文件均不含 Hills 当前服务器 AccessToken 与 Emby UserId；`release-staging\pending` 的三个文件（exe、脱敏 ini、使用说明）不含令牌、用户 ID、`C:\Users` 一类本机路径、计算机名或真实服务器地址；exe 二进制字符串扫描未发现本机路径、用户名或服务器域名。
 - staging（§6）：`release-staging\pending`，仅含 `mpv-launcher.exe`、脱敏 `launcher.ini`（mpv 路径与服务器地址为通用占位值）、`使用说明.md`；exe SHA-256 与发布目录一致（`b589c906…`）。
 - 发布待办：版本号需用户明确确认（按此前 Z+1 惯例应为 `1.0.2`）。确认后依次执行 ZIP 组包与 SHA-256 校验、提交并推送、创建 `vX.Y.Z` tag、创建正式 GitHub Release、远端 tag/asset/hash 校验，最后回填发布记录。
+
+## 2026-09-24 20:26
+
+### v1.0.2 组包与 ZIP 校验
+
+- 用户已明确确认版本号为 `1.0.2`（沿用此前 Z+1 惯例）；未修改《发布流程.md》。
+- 准备提交：`acf6dc3 Prepare v1.0.2 release`（`Program.cs`、`README.md`、`launcher.ini.example`、`docs/codex/STATUS.md`、`version/工作进度.md`）。
+- staging（§6）：`release-staging\v1.0.2`，只含 `mpv-launcher.exe`（69572322 字节）、脱敏 `launcher.ini`（1094 字节，mpv 路径 `mpv.exe`、服务器地址为 `https://your-emby-server.example`）、`使用说明.md`（2367 字节）；未复制 `logs`、`bin`、`obj`、`test-output` 或本机 `launcher.ini`。
+- ZIP：`release\hill-mpv-launcher-v1.0.2-win-x64.zip`，大小 `31682562` 字节，SHA-256 `32f741c6ad37e185496dc410d35ac151d29e83b353aa8b65f0f63e38d982a6e9`；ZIP 内只有 `mpv-launcher.exe`、`launcher.ini`、`使用说明.md` 三个根级条目，无额外文件。
+- 完整性校验：解压到 `release-verify-v1.0.2\zip` 后逐个比对，三个文件与 staging 哈希完全一致（exe `b589c906…`、ini `d330ff20…`、说明 `a45ed421…`）。
+- Release Notes：`release\release-notes-v1.0.2.txt`，共 5 行，每行均以 `[修改]` 或 `[新增]` 开头，未新增其他标签。
+- 发布记录文件不进入源码仓库：`release\`、`release-staging\`、`release-verify*` 均由 `.gitignore` 覆盖。
+- 下一步：提交本记录、创建并推送 `v1.0.2` annotated tag、创建正式 GitHub Release，然后校验远端 tag/标题/Notes/asset 名称与大小与 digest。
