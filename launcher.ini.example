@@ -19,6 +19,8 @@ extra_args=
 server=https://your-emby-server.example
 # 可留空。wrapper 会优先读取 Hills 当前服务器的本地会话；若无法读取或服务器要求独立 API key，再填写并只保存在本地。
 token=
+# 可留空。服务器校验播放用户时会自动读取 Hills 会话里的 Emby 用户 ID；只有读取失败时才需要手动填写。
+user_id=
 device_id=HillsMpvLauncher
 
 [hills]

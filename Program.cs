@@ -154,7 +154,7 @@ internal static class Program
 
         foreach (var candidate in inspection.UrlCandidates)
         {
-            logger.Info("URL", $"source=argv index={candidate.Index} auxiliary={candidate.IsAuxiliary} kind={candidate.Kind} emby={candidate.IsEmby} cdn115={candidate.Is115} {UrlDiagnostics.Describe(candidate.Value)}");
+            logger.Info("URL", $"source=argv index={candidate.Index} span={candidate.SpanDescription} auxiliary={candidate.IsAuxiliary} playlist_entry={candidate.IsPlaylistEntry} entry_title={Redactor.SafeLog(candidate.EntryTitle)} kind={candidate.Kind} emby={candidate.IsEmby} cdn115={candidate.Is115} {UrlDiagnostics.Describe(candidate.Value)}");
         }
 
         foreach (var candidate in inspection.EnvironmentUrlCandidates)
@@ -576,9 +576,11 @@ internal sealed class LauncherConfig
         ConfiguredEmbyToken = Get("emby.token") ?? string.Empty;
         RawExtraArgs = Get("mpv.extra_args") ?? string.Empty;
         var configuredToken = ConfiguredEmbyToken;
+        var hillsCredentials = HillsCredentialReader.TryGetCredentials(ResolveHillsDataDirectory(), EmbyServer);
         EmbyToken = !string.IsNullOrWhiteSpace(configuredToken)
             ? configuredToken
-            : HillsCredentialReader.TryGetAccessToken(ResolveHillsDataDirectory(), EmbyServer);
+            : hillsCredentials?.AccessToken;
+        EmbyUserId = Get("emby.user_id") ?? hillsCredentials?.UserId;
         ResolveFromHillsCache = ParseBool(Get("hills.resolve_from_cache") ?? Get("resolver.resolve_from_hills_cache"), true);
         HillsResponseScanLimit = ParseInt(Get("hills.response_scan_limit"), 256, 16, 2048);
         HasEmbyServer = !string.IsNullOrWhiteSpace(EmbyServer);
@@ -599,6 +601,7 @@ internal sealed class LauncherConfig
     public string? EmbyServer { get; }
     public string ConfiguredEmbyToken { get; }
     public string? EmbyToken { get; }
+    public string? EmbyUserId { get; }
     public string RawExtraArgs { get; }
     public string EmbyDeviceId { get; }
     public string? HillsDataDirectory { get; }
@@ -759,9 +762,15 @@ internal sealed class LauncherConfig
     }
 }
 
+internal sealed record HillsCredentials(string AccessToken, string UserId);
+
 internal static class HillsCredentialReader
 {
-    public static string? TryGetAccessToken(string? hillsDataDirectory, string? embyServer)
+    /// <summary>
+    /// 从 Hills 数据库读取当前服务器的访问令牌与登录用户 ID。
+    /// Emby 侧的播放校验要求请求里带上 User ID，因此两者需要一起读取。
+    /// </summary>
+    public static HillsCredentials? TryGetCredentials(string? hillsDataDirectory, string? embyServer)
     {
         if (string.IsNullOrWhiteSpace(hillsDataDirectory) || string.IsNullOrWhiteSpace(embyServer))
         {
@@ -797,9 +806,9 @@ internal static class HillsCredentialReader
                 }
 
                 var authenticateJson = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
-                if (TryReadAccessToken(authenticateJson, out var accessToken))
+                if (TryReadCredentials(authenticateJson, out var accessToken, out var userId))
                 {
-                    return accessToken;
+                    return new HillsCredentials(accessToken, userId);
                 }
             }
         }
@@ -833,9 +842,10 @@ internal static class HillsCredentialReader
             && string.Equals(leftUri.AbsolutePath.TrimEnd('/'), rightUri.AbsolutePath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool TryReadAccessToken(string authenticateJson, out string accessToken)
+    private static bool TryReadCredentials(string authenticateJson, out string accessToken, out string userId)
     {
         accessToken = string.Empty;
+        userId = string.Empty;
         if (string.IsNullOrWhiteSpace(authenticateJson))
         {
             return false;
@@ -851,8 +861,16 @@ internal static class HillsCredentialReader
                 return false;
             }
 
-            accessToken = token.GetString() ?? string.Empty;
-            return !string.IsNullOrWhiteSpace(accessToken);
+        accessToken = token.GetString() ?? string.Empty;
+        if (document.RootElement.TryGetProperty("User", out var user)
+            && user.ValueKind == JsonValueKind.Object
+            && user.TryGetProperty("Id", out var userIdProperty)
+            && userIdProperty.ValueKind == JsonValueKind.String)
+        {
+            userId = userIdProperty.GetString() ?? string.Empty;
+        }
+
+        return !string.IsNullOrWhiteSpace(accessToken);
         }
         catch (JsonException)
         {
@@ -929,7 +947,22 @@ internal sealed class InvocationInspection
     public int PrimaryIndex { get; init; } = -1;
 }
 
-internal sealed record UrlCandidate(int Index, string Value, string Source, bool IsAuxiliary, bool IsEmby, bool Is115, string Kind);
+internal sealed record UrlCandidate(
+    int Index,
+    string Value,
+    string Source,
+    bool IsAuxiliary,
+    bool IsEmby,
+    bool Is115,
+    string Kind,
+    int SpanStart = 0,
+    int SpanLength = -1,
+    bool IsPlaylistEntry = false,
+    string EntryTitle = "")
+{
+    // SpanLength 为负表示候选就是整个 argv 项；否则只替换 argv 项内部的 URL 片段。
+    public string SpanDescription => SpanLength < 0 ? "whole-argument" : $"{SpanStart}+{SpanLength}";
+}
 
 internal sealed record ContextEvidence(bool HasItemId, bool HasMediaSourceId, bool HasServer, bool HasToken);
 
@@ -950,15 +983,18 @@ internal static class InvocationInspector
     public static InvocationInspection Inspect(IReadOnlyList<string> args)
     {
         var candidates = new List<UrlCandidate>();
+        var memoryPlaylistIndices = new List<int>();
         for (var index = 0; index < args.Count; index++)
         {
-            if (!TryGetHttpUrl(args[index], out var url))
+            if (TryGetHttpUrl(args[index], out var url))
             {
+                var auxiliary = IsAuxiliaryValue(args, index);
+                candidates.Add(CreateCandidate(index, url, $"argv[{index}]", auxiliary));
                 continue;
             }
 
-            var auxiliary = IsAuxiliaryValue(args, index);
-            candidates.Add(CreateCandidate(index, url, $"argv[{index}]", auxiliary));
+            // Hills 1.5.3 起把真正的媒体地址放进 --playlist=memory:// 的内联 playlist，需要逐行取 URL。
+            CollectMemoryPlaylistCandidates(args, index, candidates, memoryPlaylistIndices);
         }
 
         var environmentCandidates = new List<UrlCandidate>();
@@ -997,7 +1033,7 @@ internal static class InvocationInspector
             UrlCandidates = candidates,
             EnvironmentUrlCandidates = environmentCandidates,
             Context = context,
-            PrimaryIndex = FindPrimaryIndex(args)
+            PrimaryIndex = FindPrimaryIndex(args, candidates, memoryPlaylistIndices)
         };
     }
 
@@ -1177,7 +1213,149 @@ internal static class InvocationInspector
         return new UrlCandidate(index, value, source, auxiliary, IsEmbyUrl(value), Is115Url(value), GetKind(value));
     }
 
-    private static int FindPrimaryIndex(IReadOnlyList<string> args)
+    /// <summary>
+    /// 解析 --playlist=memory:// 的内联 playlist，把其中的 HTTP(S) 媒体条目登记为候选。
+    /// Hills 1.5.3 起用这种格式传入媒体地址，地址只是 argv 项内部的一行。
+    /// </summary>
+    private static void CollectMemoryPlaylistCandidates(
+        IReadOnlyList<string> args,
+        int index,
+        List<UrlCandidate> candidates,
+        List<int> memoryPlaylistIndices)
+    {
+        if (!TryGetMemoryPlaylistDataStart(args, index, out var dataStart))
+        {
+            return;
+        }
+
+        memoryPlaylistIndices.Add(index);
+        var entryTitle = string.Empty;
+        foreach (var (lineStart, lineLength) in EnumeratePlaylistLines(args[index], dataStart))
+        {
+            var rawLine = args[index].Substring(lineStart, lineLength);
+            var line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            if (line.StartsWith("#EXTINF", StringComparison.OrdinalIgnoreCase))
+            {
+                entryTitle = GetPlaylistEntryTitle(line);
+                continue;
+            }
+
+            if (line.StartsWith("#", StringComparison.Ordinal))
+            {
+                // #EXTM3U 之类的标签行既不是标题也不是媒体。
+                continue;
+            }
+
+            if (TryGetHttpUrl(line, out var url))
+            {
+                var spanStart = lineStart + (rawLine.Length - rawLine.TrimStart().Length);
+                candidates.Add(new UrlCandidate(
+                    index,
+                    url,
+                    $"argv[{index}]",
+                    false,
+                    IsEmbyUrl(url),
+                    Is115Url(url),
+                    GetKind(url),
+                    spanStart,
+                    line.Length,
+                    true,
+                    entryTitle));
+            }
+
+            // 本地文件或相对路径条目不生成 URL 候选，但容器索引仍会保留，继续按原样转发。
+            entryTitle = string.Empty;
+        }
+    }
+
+    private static bool TryGetMemoryPlaylistDataStart(IReadOnlyList<string> args, int index, out int dataStart)
+    {
+        const string memoryScheme = "memory://";
+        var argument = args[index];
+        foreach (var option in new[] { "--playlist=", "-playlist=" })
+        {
+            if (!argument.StartsWith(option, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var valueStart = option.Length;
+            if (argument.AsSpan(valueStart).StartsWith(memoryScheme, StringComparison.OrdinalIgnoreCase))
+            {
+                dataStart = valueStart + memoryScheme.Length;
+                return true;
+            }
+
+            dataStart = 0;
+            return false;
+        }
+
+        if (index > 0
+            && IsPlaylistOption(args[index - 1])
+            && argument.StartsWith(memoryScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            dataStart = memoryScheme.Length;
+            return true;
+        }
+
+        dataStart = 0;
+        return false;
+    }
+
+    private static bool IsPlaylistOption(string value)
+    {
+        return string.Equals(value, "--playlist", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "-playlist", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 按真实换行、回车换行以及字面量 \n 三种写法切分 playlist 内容。
+    /// 真实换行是 Hills 1.5.3 的写法，字面量写法用于兼容其他编码。
+    /// </summary>
+    private static IEnumerable<(int Start, int Length)> EnumeratePlaylistLines(string value, int start)
+    {
+        var lineStart = start;
+        for (var index = Math.Max(0, start); index < value.Length; index++)
+        {
+            var character = value[index];
+            var literalEscape = character == '\\' && index + 1 < value.Length && value[index + 1] == 'n';
+            if (character != '\n' && character != '\r' && !literalEscape)
+            {
+                continue;
+            }
+
+            yield return (lineStart, index - lineStart);
+            var step = literalEscape ? 2 : 1;
+            if (character == '\r' && index + 1 < value.Length && value[index + 1] == '\n')
+            {
+                step = 2;
+            }
+
+            index += step - 1;
+            lineStart = index + 1;
+        }
+
+        if (lineStart < value.Length)
+        {
+            yield return (lineStart, value.Length - lineStart);
+        }
+    }
+
+    private static string GetPlaylistEntryTitle(string line)
+    {
+        var separator = line.IndexOf(',');
+        return separator < 0 ? string.Empty : line[(separator + 1)..].Trim();
+    }
+
+    private static int FindPrimaryIndex(
+        IReadOnlyList<string> args,
+        IReadOnlyList<UrlCandidate> candidates,
+        IReadOnlyList<int> memoryPlaylistIndices)
     {
         var afterSeparator = false;
         for (var index = 0; index < args.Count; index++)
@@ -1207,7 +1385,14 @@ internal static class InvocationInspector
             return index;
         }
 
-        return -1;
+        // Hills 1.5.3 起媒体只存在于 --playlist=memory:// 内联数据里，该参数本身就是主媒体载体。
+        var playlistEntry = candidates.FirstOrDefault(candidate => candidate.IsPlaylistEntry);
+        if (playlistEntry is not null)
+        {
+            return playlistEntry.Index;
+        }
+
+        return memoryPlaylistIndices.Count > 0 ? memoryPlaylistIndices[0] : -1;
     }
 
     private static bool IsAuxiliaryValue(IReadOnlyList<string> args, int index)
@@ -1247,6 +1432,7 @@ internal static class HillsCacheResolver
             config,
             inspection.PrimaryIndex,
             null,
+            null,
             out resolved,
             out reason);
     }
@@ -1256,6 +1442,7 @@ internal static class HillsCacheResolver
         LauncherConfig config,
         int mediaIndex,
         string? mediaTitleOverride,
+        string? mediaFileNameOverride,
         out ResolvedSessionUrl resolved,
         out string reason)
     {
@@ -1294,7 +1481,10 @@ internal static class HillsCacheResolver
             return false;
         }
 
-        var mediaFileName = GetMediaFileName(inspection.Arguments[mediaIndex]);
+        // playlist 内联数据里，整个 argv 项不是 URL；此时必须用条目 URL 推导文件名。
+        var mediaFileName = string.IsNullOrWhiteSpace(mediaFileNameOverride)
+            ? GetMediaFileName(inspection.Arguments[mediaIndex])
+            : mediaFileNameOverride!;
         var matches = new List<MediaMatch>();
         var rememberReason = string.Empty;
         var preferencesPath = Path.Combine(hillsDataDirectory, "shared_preferences.json");
@@ -1725,6 +1915,12 @@ internal static class HillsCacheResolver
             .Append(Uri.EscapeDataString(config.EmbyDeviceId))
             .ToString();
 
+        // 服务器会校验播放用户，缺失 User ID 时直接 403；mpv 自己无法补这个字段。
+        if (!string.IsNullOrWhiteSpace(config.EmbyUserId))
+        {
+            sessionUrl += "&UserId=" + Uri.EscapeDataString(config.EmbyUserId!);
+        }
+
         if (!string.IsNullOrWhiteSpace(config.EmbyToken))
         {
             sessionUrl += "&api_key=" + Uri.EscapeDataString(config.EmbyToken);
@@ -1838,7 +2034,7 @@ internal static class HillsCacheResolver
         return false;
     }
 
-    private static string GetMediaFileName(string value)
+    public static string GetMediaFileName(string value)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
         {
@@ -1904,12 +2100,22 @@ internal static class LaunchPlanner
     {
         var forwarded = inspection.Arguments.ToList();
         var primaryIndex = inspection.PrimaryIndex;
-        var primaryBefore = primaryIndex >= 0 && primaryIndex < forwarded.Count ? forwarded[primaryIndex] : null;
-        var selected = inspection.UrlCandidates.FirstOrDefault(candidate => !candidate.IsAuxiliary && candidate.IsEmby)
+        var primaryArgumentBefore = primaryIndex >= 0 && primaryIndex < forwarded.Count ? forwarded[primaryIndex] : null;
+        var primaryCandidates = inspection.UrlCandidates
+            .Where(candidate => !candidate.IsAuxiliary && candidate.Index == primaryIndex)
+            .OrderBy(candidate => candidate.SpanStart)
+            .ToList();
+        var primaryCandidate = primaryCandidates.Count > 0 ? primaryCandidates[0] : null;
+        // 主媒体地址可能是独立的位置参数，也可能是 --playlist=memory:// 内联 playlist 的第一个条目。
+        var primaryBefore = primaryCandidate?.Value ?? primaryArgumentBefore;
+        var replacements = new List<(int Index, int SpanStart, int SpanLength, string Value)>();
+        var embyCandidate = inspection.UrlCandidates.FirstOrDefault(candidate => !candidate.IsAuxiliary && candidate.IsEmby)
             ?? inspection.EnvironmentUrlCandidates.FirstOrDefault(candidate => candidate.IsEmby);
         var action = "forward-original";
         var selectedUrl = primaryBefore;
-        var selectedSource = primaryBefore is null ? null : "argv-primary";
+        var selectedSource = primaryBefore is null
+            ? null
+            : primaryCandidate is null ? "argv-primary" : "argv-playlist-entry";
         var canLaunch = true;
         string? failureReason = null;
         var resolverDiagnostic = "not-needed";
@@ -1920,22 +2126,34 @@ internal static class LaunchPlanner
             failureReason = "no primary media argument found";
             action = "reject-no-media";
         }
-        else if (config.PreferEmbyUrl && selected is not null && !string.Equals(primaryBefore, selected.Value, StringComparison.Ordinal))
+        else if (config.PreferEmbyUrl
+            && embyCandidate is not null
+            && !string.Equals(primaryBefore, embyCandidate.Value, StringComparison.Ordinal))
         {
-            forwarded[primaryIndex] = selected.Value;
-            selectedUrl = selected.Value;
-            selectedSource = selected.Source;
+            if (primaryCandidate is null)
+            {
+                replacements.Add((primaryIndex, 0, -1, embyCandidate.Value));
+            }
+            else
+            {
+                replacements.Add((primaryCandidate.Index, primaryCandidate.SpanStart, primaryCandidate.SpanLength, embyCandidate.Value));
+            }
+
+            selectedUrl = embyCandidate.Value;
+            selectedSource = embyCandidate.Source;
             action = "replace-primary-with-emby";
         }
-        else if (primaryBefore is not null && InvocationInspector.Is115Url(primaryBefore) && selected is null)
+        else if (primaryCandidate is not null && primaryCandidate.Is115)
         {
             var mediaCandidates = inspection.UrlCandidates
                 .Where(candidate => !candidate.IsAuxiliary && candidate.Is115)
                 .OrderBy(candidate => candidate.Index)
+                .ThenBy(candidate => candidate.SpanStart)
                 .ToList();
             var diagnostics = new List<string>();
             var resolvedCount = 0;
             ResolvedSessionUrl? primaryResolved = null;
+            var singleEntryContainers = GetSingleEntryContainerIndexes(inspection.UrlCandidates);
 
             foreach (var candidate in mediaCandidates)
             {
@@ -1945,7 +2163,8 @@ internal static class LaunchPlanner
                     continue;
                 }
 
-                if (!InvocationInspector.TryGetMediaTitleForUrl(inspection.Arguments, candidate.Index, out var mediaTitle))
+                var mediaTitle = ResolveMediaTitle(inspection.Arguments, candidate, singleEntryContainers);
+                if (string.IsNullOrWhiteSpace(mediaTitle))
                 {
                     diagnostics.Add($"index={candidate.Index}:force-media-title-not-found");
                     continue;
@@ -1956,13 +2175,14 @@ internal static class LaunchPlanner
                     config,
                     candidate.Index,
                     mediaTitle,
+                    HillsCacheResolver.GetMediaFileName(candidate.Value),
                     out var resolved,
                     out var resolverReason))
                 {
-                    forwarded[candidate.Index] = resolved.Url;
+                    replacements.Add((candidate.Index, candidate.SpanStart, candidate.SpanLength, resolved.Url));
                     resolvedCount++;
                     diagnostics.Add($"index={candidate.Index}:{resolved.Diagnostic}");
-                    if (candidate.Index == primaryIndex)
+                    if (IsPrimaryCandidate(candidate, primaryCandidate, primaryIndex))
                     {
                         primaryResolved = resolved;
                     }
@@ -2012,16 +2232,19 @@ internal static class LaunchPlanner
                 }
             }
         }
-        else if (primaryBefore is not null && InvocationInspector.IsEmbyUrl(primaryBefore))
+        else if (primaryCandidate is not null && primaryCandidate.IsEmby)
         {
             selectedUrl = primaryBefore;
             selectedSource = "argv-primary-emby";
             action = "forward-emby-session";
         }
-        else if (!config.PreferEmbyUrl && selected is not null)
+        else if (!config.PreferEmbyUrl && embyCandidate is not null)
         {
             action = "prefer-emby-disabled";
         }
+
+        ApplyReplacements(forwarded, replacements);
+        var primaryArgumentAfter = primaryIndex >= 0 && primaryIndex < forwarded.Count ? forwarded[primaryIndex] : null;
 
         forwarded.AddRange(config.ExtraArgs);
         var remoteStartupLogoSafetyAdded = false;
@@ -2051,7 +2274,9 @@ internal static class LaunchPlanner
             PrimaryBefore = primaryBefore,
             SelectedUrl = selectedUrl,
             SelectedSource = selectedSource,
-            ExactPrimaryForwarding = primaryBefore is null || selectedUrl is null || string.Equals(primaryBefore, selectedUrl, StringComparison.Ordinal),
+            ExactPrimaryForwarding = primaryArgumentBefore is null
+                || primaryArgumentAfter is null
+                || string.Equals(primaryArgumentBefore, primaryArgumentAfter, StringComparison.Ordinal),
             CanLaunch = canLaunch,
             FailureReason = failureReason,
             ExtraArgumentCount = config.ExtraArgs.Count,
@@ -2059,6 +2284,99 @@ internal static class LaunchPlanner
             RemoteNoResumeSafetyAdded = remoteNoResumeSafetyAdded,
             ResolverDiagnostic = resolverDiagnostic
         };
+    }
+
+    /// <summary>
+    /// 只有一个条目的 playlist 仍以 Hills 的 --force-media-title 为准；多条目 playlist 无法用单个标题区分，改用条目自身信息。
+    /// </summary>
+    private static string ResolveMediaTitle(
+        IReadOnlyList<string> args,
+        UrlCandidate candidate,
+        ISet<int> singleEntryContainers)
+    {
+        var hasBlockTitle = InvocationInspector.TryGetMediaTitleForUrl(args, candidate.Index, out var blockTitle)
+            && !string.IsNullOrWhiteSpace(blockTitle);
+        if (!candidate.IsPlaylistEntry)
+        {
+            return hasBlockTitle ? blockTitle : string.Empty;
+        }
+
+        if (singleEntryContainers.Contains(candidate.Index))
+        {
+            return hasBlockTitle ? blockTitle : candidate.EntryTitle;
+        }
+
+        if (!string.IsNullOrWhiteSpace(candidate.EntryTitle))
+        {
+            return candidate.EntryTitle;
+        }
+
+        // 多条目 playlist 没有独立标题时，用该条目 URL 的文件名作为匹配依据。
+        return HillsCacheResolver.GetMediaFileName(candidate.Value);
+    }
+
+    private static HashSet<int> GetSingleEntryContainerIndexes(IReadOnlyList<UrlCandidate> candidates)
+    {
+        var counts = new Dictionary<int, int>();
+        foreach (var candidate in candidates)
+        {
+            if (!candidate.IsPlaylistEntry)
+            {
+                continue;
+            }
+
+            counts[candidate.Index] = counts.TryGetValue(candidate.Index, out var count) ? count + 1 : 1;
+        }
+
+        return counts
+            .Where(pair => pair.Value == 1)
+            .Select(pair => pair.Key)
+            .ToHashSet();
+    }
+
+    private static bool IsPrimaryCandidate(UrlCandidate candidate, UrlCandidate? primaryCandidate, int primaryIndex)
+    {
+        return primaryCandidate is not null
+            && candidate.Index == primaryIndex
+            && candidate.SpanStart == primaryCandidate.SpanStart;
+    }
+
+    /// <summary>
+    /// 按 argv 项分组应用替换；同一项内的多个条目按原始偏移顺序重建，避免前面的替换影响后面的偏移。
+    /// </summary>
+    private static void ApplyReplacements(
+        List<string> forwarded,
+        List<(int Index, int SpanStart, int SpanLength, string Value)> replacements)
+    {
+        foreach (var group in replacements.GroupBy(item => item.Index))
+        {
+            var original = forwarded[group.Key];
+            var builder = new StringBuilder(original.Length);
+            var cursor = 0;
+            foreach (var item in group.OrderBy(entry => entry.SpanStart))
+            {
+                if (item.SpanLength < 0)
+                {
+                    // 整个 argv 项替换成新的媒体地址。
+                    builder.Clear().Append(item.Value);
+                    cursor = original.Length;
+                    continue;
+                }
+
+                var start = Math.Clamp(item.SpanStart, cursor, original.Length);
+                var length = Math.Clamp(item.SpanLength, 0, original.Length - start);
+                builder.Append(original, cursor, start - cursor);
+                builder.Append(item.Value);
+                cursor = start + length;
+            }
+
+            if (cursor < original.Length)
+            {
+                builder.Append(original, cursor, original.Length - cursor);
+            }
+
+            forwarded[group.Key] = builder.ToString();
+        }
     }
 
     private static bool IsRemoteMediaInvocation(InvocationInspection inspection, string? selectedUrl)
@@ -2692,6 +3010,7 @@ internal static class Redactor
     {
         var normalized = key.Trim().ToLowerInvariant().Replace("-", string.Empty).Replace("_", string.Empty);
         return normalized is "s" or "u" or "token" or "sign" or "signature" or "apikey" or "accesstoken" or "xembytoken"
+            or "userid" or "embyuserid"
             || normalized.Contains("apikey", StringComparison.Ordinal)
             || normalized.Contains("accesstoken", StringComparison.Ordinal)
             || normalized.Contains("token", StringComparison.Ordinal)

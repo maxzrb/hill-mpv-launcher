@@ -9,9 +9,10 @@
 - 日志默认为 UTF-8，写入 `logs/launcher-YYYYMMDD.log`。
 - 普通日志会遮盖 `api_key`、`AccessToken`、`token`、`sign`、Cookie 等敏感值；115 CDN URL 的查询参数全部遮盖，只保留 URL 形状。
 - 如果 Hills 同时传入 Emby 会话 URL 和 115 CDN URL，优先把主媒体参数替换为 Emby URL。
-- 如果 Hills 只传入 115 CDN URL，则读取 Hills 本地 `shared_preferences.json` 中与当前媒体标题匹配的 `ItemId` 和 `MediaSourceId`，生成 Emby `/emby/videos/{id}/original.mkv` 会话地址，让 Emby 重新生成新鲜的 115 签名；剧集场景优先使用 `MediaSourceId` 的视频 ID，避免把季 ID 当成视频 ID。
+- 如果 Hills 只传入 115 CDN URL，则读取 Hills 本地 `shared_preferences.json` 中与当前媒体标题匹配的 `ItemId` 和 `MediaSourceId`，生成 Emby `/emby/videos/{id}/original.mkv` 会话地址，让 Emby 重新生成新鲜的 115 签名；剧集场景优先使用 `MediaSourceId` 的视频 ID，避免把季 ID 当成视频 ID。会话地址会同时带上 Hills 当前登录用户的 Emby `UserId`，因为服务器会校验播放用户，缺失时直接返回 403。
 - `rememberTracks` 没有命中时，会继续扫描 Hills 响应缓存中的单媒体详情和 `Items` 列表，按媒体文件名、媒体源名和标题评分；同分时拒绝猜测，避免同名资源串片。
 - Hills 一次传入多个 `--{ ... --}` 媒体块时，每个媒体块按自己的标题和文件名分别解析、替换，不会只处理第一集；缓存缺少后续集详情时，会使用 Hills 本地已登录会话向 Emby 查询匹配的媒体源。
+- 兼容 Hills Lite 1.5.3 起的调用格式：媒体地址写在 `--playlist=memory://` 内联 playlist 的一行里，launcher 会逐行解析这些条目，只替换其中的 115 CDN 地址，并保留 `#EXTM3U`、`#EXTINF` 等 playlist 结构；同一个 playlist 里包含多集时按条目各自匹配。
 - 如果配置中的 `[emby] token` 留空，会从 Hills 本地数据库读取当前服务器的 AccessToken，仅在内存中用于生成会话地址，不写回配置、不写入日志。
 - 对 Emby/115 等远程媒体会自动追加 `--script-opts-append=startup_format_logos-mode=none` 和 `--no-resume-playback`：前者关闭 startup-format-logos 的 ffmpeg 后瞻探测，后者避免 mpv 的 watch-later 恢复到旧的 playlist 集数；本地文件不追加，用户已明确设置对应选项时不覆盖。
 - 如果只有 CDN URL 且没有可恢复的 Emby 上下文，不猜测 ItemId，原样转发或按配置拒绝。

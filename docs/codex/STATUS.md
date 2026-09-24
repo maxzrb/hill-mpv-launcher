@@ -6,13 +6,13 @@
 |------|------|
 | 项目目录 | `<project-root>` |
 | 项目类型 | Windows Hills Lite 外部播放器 launcher/wrapper |
-| 当前阶段 | `v1.0.1` 已正式发布：包含双击配置向导，Release 已完成远端校验 |
+| 当前阶段 | `v1.0.1` 已正式发布；当前工作区含两项未发布的兼容性修复：支持 Hills Lite 1.5.3 的 `--playlist=memory://` 内联 playlist 调用格式；Emby 会话地址补充 `UserId` 以通过服务器新增的播放用户校验 |
 | 技术栈 | C# / .NET 8 / Windows P/Invoke |
 | 发布产物 | `hill-mpv-launcher-v1.0.1-win-x64.zip`；包含 self-contained `mpv-launcher.exe`、脱敏 `launcher.ini` 与 `使用说明.md` |
-| Git | 发布记录已同步至 `4b6568c`；`v1.0.1` tag 已推送；`v1.0.0` 保持不变 |
+| Git | 已推送 `4b6568c`/`5391cfd`；`v1.0.1` tag 已推送；本次修复尚未提交，`v1.0.0` 保持不变 |
 | 项目版本 | `1.0.1`；已正式发布，tag 为 `v1.0.1` |
 | Release | 本版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.1`；上一版：`https://github.com/maxzrb/hill-mpv-launcher/releases/tag/v1.0.0` |
-| 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道 |
+| 主要边界 | 不保存 Hills 登录 Token，不缓存 CDN 签名；仅按当前服务器匹配读取 Hills 已落盘 AccessToken 并在内存使用；评分不足或同分时原样回退；reporter 回传依赖父进程 stdout 通道；playlist 场景只替换条目里的媒体 URL，保留 `#EXTM3U`/`#EXTINF` 等结构与其余参数 |
 
 ## 已完成能力
 
@@ -63,12 +63,19 @@
 - 本次 Release build 与 self-contained publish 均通过 0 警告、0 错误；测试进程已按精确路径清理。
 - 最新 Hills 日志确认旧行为含 `Resuming playback`，先进入 playlist 位置 1（S1E8），约 20 多秒后才加载 S1E7；加入 `--no-resume-playback` 后单集回归不再出现恢复提示，S1E7 按 `--start=102` 加载并持续运行。
 - 三集 playlist 回归通过：最终命令含 `--no-resume-playback`，mpv 首个 `Playing` 直接为 S1E7，未恢复到 S1E8；测试进程已清理。
+- Hills Lite 1.5.3 新格式回归通过：`--playlist=memory://#EXTM3U\n#EXTINF:-1,<标题>\n<115 URL>\n`（真实换行）里的 115 地址被就地替换为 Emby 会话地址，playlist 标签与其余参数保持原样，`command_line_round_trip=true`。
+- 同一 playlist 内含多集时按条目分别解析：3 条目的 dry-run 生成 3 个不同的 Emby 视频地址（`replace-115-playlist-with-emby-sessions`），未出现串集。
+- 旧格式回归通过：位置参数单 URL、三个 `--{ ... --}` 媒体块各一集、辅助字幕 URL、本地文件（含新格式 playlist 内本地路径）行为均未改变。
+- 真实 mpv 冒烟测试通过：重建后的 `--playlist=memory://...` 交给 mpv `v0.41.0-922-gf4d13e1c2` 实际启动，mpv 输出 `Playing: <emby-server>/emby/videos/<item-id>/original.mkv?...`，证明 playlist 可被 mpv 正常解析并加载替换后的地址。
+- 服务器播放用户校验已通过：会话地址带上 `UserId` 后，电影（`259465`）与剧集（`228185`）的 Range 探测均为 Emby 302 → 115 `206`；未带 `UserId` 时服务器返回 `HTTP 403 {"error":"播放被拒绝：请求中缺少 Emby User ID..."}`。
+- 真实播放验证通过（无窗口模式 `--vo=null --ao=null --length=8`）：mpv 加载会话地址、`time-pos` 递增到 8.0 秒、`dynamic_crop` 确认解出 1920x1080 画面、`end-file reason=eof`，全程无 403。
 
 ## 后续工作
 
-1. 用户用发布目录的 `mpv-launcher.exe` 在 Hills 中重新验证 S1E7，并继续验证电影、剧集和多媒体源切换。
-2. 若仍失败，提供对应时间段的脱敏 launcher 日志，重点看 `selected_source`、`remote_startup_logo_safety_added`、`remote_no_resume_safety_added` 与 `stderr_diagnostics`。
-3. 如 Hills 的 reporter 使用的不是 stdout 文本通道，再根据实际脚本协议补充专用 IPC；当前不伪造未知协议。
+1. 用户在 Hills Lite 1.5.3 中重新验证外部播放：电影、单集、以及同一 playlist 内的多集连播。
+2. 若仍失败，提供对应时间段的脱敏 launcher 日志，重点看新增的 `playlist_entry`、`span`、`entry_title`，以及 `selected_source`、`remote_startup_logo_safety_added`、`remote_no_resume_safety_added` 与 `stderr_diagnostics`。
+3. 如需要对外发布这项修复，先与用户确认版本号（如 `v1.0.2`），再完整执行《发布流程.md》；当前未打包、未打 tag、未推送。
+4. 如 Hills 的 reporter 使用的不是 stdout 文本通道，再根据实际脚本协议补充专用 IPC；当前不伪造未知协议。
 
 ## 2026-09-06 16:06
 
@@ -276,3 +283,60 @@
 - 发布记录提交 `4b6568c` 已推送到 `origin/main`；`v1.0.1` tag 指向打包提交，未改写任何既有版本。
 - GitHub Release、tag、标题、唯一 asset、asset digest 和 Notes 标签检查全部通过。
 - 当前版本 `1.0.1` 已完成本次发布流程，无待处理发布动作。
+
+## 2026-09-24 19:55
+
+### 修复 Hills Lite 1.5.3 新调用格式导致的 reject-no-media
+
+- 现象：用户反馈 Hills 更新后外部播放失效。Hills 已升级到 `1.5.3.0`（包目录时间 `2026-09-18`），`externalMpvPath` 仍指向 `<project-root>\bin\Release\net8.0-windows\win-x64\publish\mpv-launcher.exe`，但 9/18 与 9/21 的日志均为 `action=reject-no-media can_launch=False`，mpv 从未启动。
+- 根因：Hills 1.4.1 把 115 直链作为位置参数放在 `--{ ... --}` 内；1.5.3 改为把整段 M3U 放进单个参数 `--playlist=memory://#EXTM3U\n#EXTINF:-1,<标题>\n<115 URL>\n`，其中换行是真实换行（`0x0A`）。旧 launcher 只识别以 `http(s)://` 开头的 argv 项，因此找不到主媒体参数。
+- 格式确认方式：从 Hills 的 `data/app.so` 中定位到字符串常量 `--playlist=memory://#EXTM3U` + `0x0A` + `#EXTINF:-1,`；同时用 mpv 实测真实换行可解析、字面量 `\n` 与 `%0A` 会被当成单个文件名，两者结论一致。
+- 代码改动（`Program.cs`）：
+  - `UrlCandidate` 新增 `SpanStart`/`SpanLength`/`IsPlaylistEntry`/`EntryTitle`，支持只替换 argv 项内部的 URL 片段；日志新增 `span`、`playlist_entry`、`entry_title`。
+  - 新增 `CollectMemoryPlaylistCandidates`、`TryGetMemoryPlaylistDataStart`、`EnumeratePlaylistLines`、`GetPlaylistEntryTitle`，解析 `--playlist=memory://` 内联数据（真实换行、CRLF、字面量 `\n` 三种写法），并记录每条的 `#EXTINF` 标题。
+  - `FindPrimaryIndex` 在没有位置媒体参数时把 memory playlist 参数视为主媒体载体；纯本地文件的 playlist 也继续原样转发，不再被拒绝。
+  - `LaunchPlanner.Build` 改为候选驱动：主媒体既可是位置参数也可是 playlist 内条目；替换按 argv 项分组、按原始偏移重建，同一 playlist 多条可一次性替换；`ExactPrimaryForwarding` 改为比较替换前后的完整 argv 项。
+  - 标题解析新增 `ResolveMediaTitle`：单条目 playlist 仍用 `--force-media-title`，多条目 playlist 用各自 `#EXTINF` 标题，缺标题时退回条目 URL 文件名；`HillsCacheResolver` 增加媒体文件名覆盖参数，避免用整个 playlist 字符串推导文件名导致评分丢失。
+- 命令与验证：
+  - `dotnet build .\HillsMpvLauncher.csproj -c Release --nologo`：0 警告、0 错误。
+  - `dotnet publish .\HillsMpvLauncher.csproj -c Release -r win-x64 --self-contained true --nologo -o .\bin\Release\net8.0-windows\win-x64\publish`：通过；发布目录 exe 已更新，`launcher.ini` 未被改动。
+  - `release-verify-hills153\run-tests.ps1`：T1 新格式单条目、T2 旧格式单 URL、T3 同一 playlist 内 3 集、T4 旧格式 3 个媒体块、T5 playlist 内本地文件、T6 辅助字幕 URL，6 组 dry-run 全部符合预期，`command_line_round_trip=true`。
+  - `release-verify-hills153\run-publish-check.ps1`：对发布目录 exe 复测新格式单条目/双条目，分别得到 `replace-115-with-emby-session` 与 `replace-115-playlist-with-emby-sessions`。
+  - `release-verify-hills153\run-smoke.ps1`：真实 mpv 启动并输出 `Playing: <emby-server>/emby/videos/<item-id>/original.mkv?...`；因本机代理（127.0.0.1:7897）未运行、115 直连较慢，未等待完整播放，测试进程已按精确 PID 清理。
+- 文件变更：`Program.cs`（核心修复）、`README.md`（新增兼容说明）、`docs/codex/STATUS.md`、`version/工作进度.md`；新增本地验证目录 `release-verify-hills153\`（被 `.gitignore` 的 `release-verify*/` 覆盖）。
+- Git：上述修改尚未提交；未创建 tag、未打包、未推送；`v1.0.1` 与 `v1.0.0` Release 保持不变。
+- 下一步：请用户在 Hills 1.5.3 中实测电影、单集与同一 playlist 多集连播；如要对外发布，先确认版本号再执行《发布流程.md》。
+
+## 2026-09-24 20:12
+
+### 修复 Emby 播放被拒（缺少 Emby User ID）导致的起播失败
+
+- 现象：用户反馈“能启动 mpv 但是起播失败”。20:03 的真实日志显示新格式解析正确（`action=replace-115-with-emby-session`、`command_line_round_trip=true`），但 mpv 报 `[curl] HTTP error 403`，`stderr_diagnostics=http-403-or-signature,open-or-loading-failure`。
+- 根因：Emby 服务器侧新增播放校验，会话地址缺少 Emby User ID 时直接返回 403。只读探针返回完整说明：`{"error": "播放被拒绝：请求中缺少 Emby User ID，无法确认播放用户。请使用已登录的 Emby 客户端重新播放。", "stage": "stream"}`；三种形式均可通过：`&UserId=<id>` 查询参数、`X-Emby-User-Id` 请求头、标准 `X-Emby-Authorization` 请求头。launcher 生成的会话地址只带 `api_key`，因此被拒。
+- 代码改动（`Program.cs`）：
+  - `HillsCredentialReader` 改为 `TryGetCredentials`，从 Hills 数据库同一条 active 服务器记录里同时读取 `AccessToken` 与 `User.Id`；新增 `HillsCredentials` 记录。
+  - `LauncherConfig` 新增 `EmbyUserId`：优先取 `[emby] user_id`，否则取 Hills 会话里的用户 ID；令牌仍优先取 `[emby] token`。
+  - `BuildResolvedUrl` 在生成的会话地址里追加 `&UserId=`。
+  - 脱敏：`UserId`/`EmbyUserId` 视为敏感键，日志中显示为 `<redacted>`。
+  - 文档：`launcher.ini.example` 增加 `user_id` 键与说明，`README.md` 说明会话地址会携带 `UserId`。
+- 命令与验证：
+  - `dotnet build`、`dotnet publish`（self-contained）均通过，0 警告、0 错误；发布目录 exe 已更新为本次构建。
+  - 只读探针（`release-verify-hills153\emby-session-probe.py`、`emby-lookup-probe.py`、`emby-userid-probe.py`、`emby-userid-range-probe.py`）：确认为服务器侧 User ID 校验；带 `UserId` 时电影/剧集 Range 请求均 302 → 206；同时确认缓存条目 `259465` 在服务器上真实存在（标题搜索命中）。
+  - 真实播放（`release-verify-hills153\run-playback-check.ps1`，无窗口 `--vo=null --ao=null --length=8`）：`time-pos` 从 3.712 递增到 8.000，`dynamic_crop` 报出 1920x1080，`end-file reason=eof`，无 403；测试 mpv 进程已按精确 PID 清理。
+  - 发布版 dry-run（`run-publish-check.ps1`）复测单条目与双条目 playlist：会话地址均含 `UserId=<redacted>`，`command_line_round_trip=true`。
+- 文件变更：`Program.cs`、`README.md`、`launcher.ini.example`、`docs/codex/STATUS.md`、`version/工作进度.md`；新增只读探针脚本于 `release-verify-hills153\`。
+- Git：上述修改尚未提交；未创建 tag、未打包、未推送。
+- 备注：该服务器校验属于服务端策略，若将来改成要求请求头而非查询参数，需要把 `UserId` 改为通过 `--http-header-fields` 传给 mpv。
+
+## 2026-09-24 20:22
+
+### 发布前检查完成（版本号待用户确认）
+
+- 已完整阅读《发布流程.md》《AGENTS.md》《docs/codex/STATUS.md》和 `version/版本迭代记录.md`；《发布流程.md》保持未修改。
+- Git：分支 `main`，远端 `origin` 指向公开仓库 `maxzrb/hill-mpv-launcher`；本地与远端 tag 均为 `v1.0.0`、`v1.0.1`，待发布版本 tag 尚不存在；工作区含本次修复的 5 个未提交文件（`Program.cs`、`README.md`、`launcher.ini.example`、`docs/codex/STATUS.md`、`version/工作进度.md`），未覆盖任何用户既有改动。
+- 构建（§5 指定命令）：`dotnet build .\HillsMpvLauncher.csproj --configuration Release --nologo` 与 `dotnet publish .\HillsMpvLauncher.csproj --configuration Release --runtime win-x64 --self-contained true --nologo --output .\bin\Release\net8.0-windows\win-x64\publish` 均为 0 警告、0 错误。
+- 发布 exe 校验：`mpv-launcher.exe` 大小 `69572322` 字节，PE `machine=0x8664`（Windows x64），发布目录不存在伴随 DLL（self-contained 单文件），`--help` 退出码 0（无媒体启动检查通过）。
+- 功能回归（`release-verify-hills153\release-checks.ps1`，全部 PASS）：远程媒体参数解析得到 `action=replace-115-with-emby-session`；同一 playlist 内 S1E7→S1E8→S1E9 按顺序解析为三个不同 Emby 视频地址；旧格式三个 `--{ ... --}` 媒体块仍可解析；reporter 脚本参数正常转发；`command_line_round_trip=true`。
+- 脱敏检查：伪敏感标记在日志中 0 命中；发布目录 4 个日志文件均不含 Hills 当前服务器 AccessToken 与 Emby UserId；`release-staging\pending` 的三个文件（exe、脱敏 ini、使用说明）不含令牌、用户 ID、`C:\Users` 一类本机路径、计算机名或真实服务器地址；exe 二进制字符串扫描未发现本机路径、用户名或服务器域名。
+- staging（§6）：`release-staging\pending`，仅含 `mpv-launcher.exe`、脱敏 `launcher.ini`（mpv 路径与服务器地址为通用占位值）、`使用说明.md`；exe SHA-256 与发布目录一致（`b589c906…`）。
+- 发布待办：版本号需用户明确确认（按此前 Z+1 惯例应为 `1.0.2`）。确认后依次执行 ZIP 组包与 SHA-256 校验、提交并推送、创建 `vX.Y.Z` tag、创建正式 GitHub Release、远端 tag/asset/hash 校验，最后回填发布记录。
